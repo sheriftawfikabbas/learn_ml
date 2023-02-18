@@ -33,9 +33,9 @@ from sklearn.metrics import average_precision_score, precision_score
 plt.rcParams.update({'font.size': 30})
 
 full_dataset_df = pd.read_csv(
-    'Molecules/Dataset/dataset.csv', index_col='material_id')
+    'dataset.csv', index_col='material_id')
 
-figfolder = 'Molecules/Figures/'
+figfolder = './'
 
 output_file = open('output', 'w')
 
