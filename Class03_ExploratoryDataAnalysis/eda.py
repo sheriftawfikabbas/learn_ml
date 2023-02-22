@@ -46,7 +46,7 @@ plt.style.use('bmh')
 folder = 'band_gaps'
 # folder = 'formation_energy_per_atom'
 # full_dataset_df = pd.read_csv('/mnt/c/MyResearch/MachineLearning/ML/ML_DScribe/ewald_dataset_e.csv', index_col='material_id')
-df = pd.read_csv('band_gaps/Dataset/dataset_expanded.csv', index_col='material_id')
+df = pd.read_csv('Data/dataset_expanded.csv', index_col='material_id')
 
 for c in df.columns:
     if 'Unnamed' in c:
