@@ -1,172 +1,174 @@
-# !pip3 install pymatgen xgboost sklearn pandas
+"""Scriptable exploratory data analysis for a tabular dataset with a target column.
 
-from sklearn.cluster import KMeans
-import matplotlib as mpl
-import umap.plot
-import umap
+This is the advanced, command-line counterpart of EDA.ipynb: point it at any
+CSV and it produces a standard battery of diagnostic plots in an output
+folder. It was originally written for materials-science datasets
+(target: band gap in eV, rows indexed by material_id), but both the index
+column and the target column are configurable.
+
+Usage
+-----
+    python eda.py DATA.csv [--index material_id] [--target band_gaps]
+                          [--outdir EDA] [--features 40] [--umap]
+
+Sections of the output (in <outdir>/):
+    0  duplicates + info() (console)
+    1  target distribution histogram
+    2  per-feature distribution grid
+    3  strongest correlations with the target (console)
+    4  pair plots of features vs target (5 features per figure)
+    5  correlations after removing zero values (console)
+    6  feature-to-feature correlation heatmap
+    7  k-means cluster sizes vs target statistics
+    8  UMAP embedding (optional, --umap; requires umap-learn)
+"""
+
+import argparse
 import operator
-from sklearn.preprocessing import StandardScaler
-from sklearn.datasets import load_boston
-from torch.utils.data import DataLoader
-from torch import nn
-import torch
-from pickle import dump
-from xgboost import XGBClassifier, plot_importance
-from sklearn import linear_model, decomposition, datasets
-from sklearn import svm
-from sklearn.ensemble import RandomForestClassifier
 import os
-import warnings
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import KFold
-from sklearn.model_selection import cross_val_score
-from sklearn.metrics import mean_absolute_error, roc_auc_score
-import joblib
-import importlib
-import json
-from pymatgen.io.cif import CifParser
-from urllib.request import urlopen
-import pandas as pd
-from pymatgen.ext.matproj import MPRester
-from pymatgen.ext.matproj import MPRestError
+
 import matplotlib.pyplot as plt
-import pandas as pd
-from sklearn.preprocessing import StandardScaler, MaxAbsScaler
-from sklearn.metrics import mean_squared_error, r2_score
-from xgboost import XGBRegressor
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.impute import SimpleImputer
 import numpy as np
-from sklearn.metrics import average_precision_score, precision_score
+import pandas as pd
 import seaborn as sns
-plt.clf()
-plt.style.use('bmh')
-
-folder = 'band_gaps'
-# folder = 'formation_energy_per_atom'
-# full_dataset_df = pd.read_csv('/mnt/c/MyResearch/MachineLearning/ML/ML_DScribe/ewald_dataset_e.csv', index_col='material_id')
-df = pd.read_csv('Data/dataset_expanded.csv', index_col='material_id')
-
-for c in df.columns:
-    if 'Unnamed' in c:
-        del df[c]
-
-# df = df.loc[df.band_gaps > 0]
-
-# 0 nulls and duplicates
-df_X = df#.iloc[:,0:40]
-duplicated = df_X[df_X.duplicated()]
-
-#np.argwhere(np.isnan(X))
-
-df.info()
-
-# 1 Descriptive statistics
-df.describe()
-sns.distplot(df['band_gaps'], color='g', bins=100, hist_kws={'alpha': 0.4})
-plt.savefig('EDA/band_gaps_histogram')
-plt.clf()
-
-# 2 Numerical data distribution
-df_num = df.select_dtypes(include=['float64', 'int64'])
-df_num.hist(figsize=(16, 20), bins=50, xlabelsize=8, ylabelsize=8)
-plt.savefig('EDA/data_distribution')
-plt.clf()
-
-# 3 Correlation
-df_num_corr = df_num.corr()['band_gaps'][:-1]
-golden_features_list = df_num_corr[abs(
-    df_num_corr) > 0.5].sort_values(ascending=False)
-print("There is {} strongly correlated values:\n{}".format(
-    len(golden_features_list), golden_features_list))
-
-# 4 Plot correlating features
-for i in range(0, len(df_num.columns), 5):
-    sns.pairplot(data=df_num,
-                 x_vars=df_num.columns[i:i+5],
-                 y_vars=['band_gaps'])
-plt.savefig('EDA/pairplot')
-plt.clf()
-
-# 5 Remove 0 values for features
-
-individual_features_df = []
-for i in range(0, len(df_num.columns) - 1):
-    tmpDf = df_num[[df_num.columns[i], 'band_gaps']]
-    tmpDf = tmpDf[tmpDf[df_num.columns[i]] != 0]
-    individual_features_df.append(tmpDf)
-
-all_correlations = {feature.columns[0]: feature.corr(
-)['band_gaps'][0] for feature in individual_features_df}
-all_correlations = sorted(all_correlations.items(), key=operator.itemgetter(1))
-for (key, value) in all_correlations:
-    print("{:>15}: {:>15}".format(key, value))
-
-golden_features_list = [key for key,
-                        value in all_correlations if abs(value) >= 0.5]
-print("There is {} strongly correlated values:\n{}".format(
-    len(golden_features_list), golden_features_list))
-
-# 6 Feature-to-feature
-
-corr = df_num.corr()
-plt.figure(figsize=(20, 20))
-
-sns.heatmap(corr,
-            cmap='viridis', vmax=1.0, vmin=-1.0, linewidths=0.1,
-            annot=True, annot_kws={"size": 8}, square=True)
-plt.savefig('EDA/f2f')
-plt.clf()
-
-# 8 K-means
-X = df.iloc[:, 0:40]
-y = df['band_gaps']
-X = X.to_numpy()
+from sklearn.cluster import KMeans
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import StandardScaler
 
 
-kmeans = KMeans(n_clusters=20, random_state=0).fit(X)
-kmeans.labels_
+def parse_args():
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument('csv', help='input CSV dataset')
+    p.add_argument('--index', default='material_id', help='index column name')
+    p.add_argument('--target', default='band_gaps', help='target column name')
+    p.add_argument('--outdir', default='EDA', help='output folder for figures')
+    p.add_argument('--features', type=int, default=40,
+                   help='max number of leading feature columns for k-means/UMAP')
+    p.add_argument('--umap', action='store_true',
+                   help='also produce UMAP embedding plots (needs umap-learn)')
+    return p.parse_args()
 
-kmeans_classes = {}
-for i in range(20):
-    kmeans_classes[i] = []
-    for j in range(len(kmeans.labels_)):
-        if kmeans.labels_[j] == i:
-            kmeans_classes[i] += [df.index.values[j]]
 
-kclasses = []
-y_mean = []
-y_std = []
-for k in kmeans_classes.keys():
-    print(k, len(kmeans_classes[k]))
-    kclasses += [len(kmeans_classes[k])]
-    y_mean +=[100*y[kmeans_classes[k]].mean()]
-    y_std +=[100*y[kmeans_classes[k]].std()]
-kclasses = np.sort(np.array(kclasses))
+def main():
+    args = parse_args()
+    if not os.path.exists(args.csv):
+        raise SystemExit(f"Dataset not found: {args.csv}\n"
+                         "Pass the path as the first argument "
+                         "(e.g. python eda.py Data/dataset_expanded.csv).")
+    os.makedirs(args.outdir, exist_ok=True)
+    sns.set_theme()
 
-plt.figure(figsize=(12, 10))
-plt.scatter(range(20),kclasses,s=y_mean)
-plt.errorbar(range(20),kclasses, yerr=y_std, fmt="o")
-plt.savefig('EDA/kclasses', bbox_inches='tight')
-plt.clf()
+    df = pd.read_csv(args.csv, index_col=args.index)
+    df = df.drop(columns=[c for c in df.columns if 'Unnamed' in c])
+    if args.target not in df.columns:
+        raise SystemExit(f"Target column '{args.target}' not found. "
+                         f"Available: {list(df.columns)}")
 
-# 7 UMap
+    def save(name):
+        plt.savefig(os.path.join(args.outdir, name + '.png'), bbox_inches='tight')
+        plt.close('all')
+        print(f"  wrote {os.path.join(args.outdir, name + '.png')}")
 
-# df = df.drop(
-# index=df.index[np.isinf(df).any(1)])
-# df = df.drop(
-#     index=df.index[np.isnan(df).any(1)])
-df_sample = df.sample(frac=0.2)
-X = df_sample.iloc[:, 0:40]
-y = df_sample['band_gaps']
-mapper = umap.UMAP().fit(X)
-# mpl.rcParams['figure.dpi'] = 3000
-plt.clf()
-plt.figure(figsize=(10, 10))
-umap.plot.points(mapper)
-plt.savefig('EDA/umap_K', bbox_inches='tight')
-umap.plot.diagnostic(mapper, diagnostic_type='pca')
-plt.savefig('EDA/umap_diagnostics_K', bbox_inches='tight')
-umap.plot.connectivity(mapper, show_points=True)
-plt.savefig('EDA/umap_connectivity_K', bbox_inches='tight')
+    # 0 duplicates and structure
+    print("Duplicated rows:", df.duplicated().sum())
+    df.info()
+
+    # 1 descriptive statistics and target distribution
+    print(df.describe())
+    sns.histplot(df[args.target], kde=True, color='g', bins=100, alpha=0.4)
+    save(args.target + '_histogram')
+
+    # 2 distribution grid of numeric features
+    df_num = df.select_dtypes(include=['float64', 'int64'])
+    df_num.hist(figsize=(16, 20), bins=50, xlabelsize=8, ylabelsize=8)
+    save('data_distribution')
+
+    # 3 correlation with the target
+    df_num_corr = df_num.corr()[args.target].iloc[:-1]   # drop target-vs-target row
+    golden_features = df_num_corr[abs(df_num_corr) > 0.5].sort_values(ascending=False)
+    print("There are {} strongly correlated values:\n{}".format(
+        len(golden_features), golden_features))
+
+    # 4 pair plots: features vs target, five features per figure
+    feature_names = [c for c in df_num.columns if c != args.target]
+    for i in range(0, len(feature_names), 5):
+        sns.pairplot(data=df_num, x_vars=feature_names[i:i + 5],
+                     y_vars=[args.target])
+        save(f'pairplot_{i // 5}')
+
+    # 5 correlations after removing zero measurements from each feature
+    zero_free_corr = {}
+    for col in feature_names:
+        view = df_num[[col, args.target]]
+        view = view[view[col] != 0].dropna()
+        if len(view) > 1:
+            zero_free_corr[col] = view.corr()[args.target].iloc[0]
+    for key, value in sorted(zero_free_corr.items(), key=operator.itemgetter(1)):
+        print("{:>25}: {: .3f}".format(key, value))
+
+    golden_zero_free = [k for k, v in zero_free_corr.items() if abs(v) >= 0.5]
+    print("There are {} strongly correlated values after zero removal: {}"
+          .format(len(golden_zero_free), golden_zero_free))
+
+    # 6 feature-to-feature correlation heatmap
+    corr = df_num.corr()
+    plt.figure(figsize=(20, 20))
+    sns.heatmap(corr, cmap='vlag', vmax=1.0, vmin=-1.0, center=0,
+                linewidths=0.1, square=True)
+    save('f2f')
+
+    # 7 k-means clustering: do cluster sizes relate to the target?
+    # KMeans is distance-based, so features must be on a common scale;
+    # and neither the imputer nor KMeans tolerate NaNs, so impute first.
+    feats = df_num[feature_names].iloc[:, :args.features]
+    y = df_num[args.target]
+    valid = y.notna()
+    X = feats.loc[valid].to_numpy()
+    y = y.loc[valid]
+    X = SimpleImputer(strategy='mean').fit_transform(X)
+    X = StandardScaler().fit_transform(X)
+
+    n_clusters = min(20, len(X))
+    labels = KMeans(n_clusters=n_clusters, random_state=0, n_init=10).fit_predict(X)
+
+    sizes, y_mean, y_std = [], [], []
+    for k in range(n_clusters):
+        members = y.index[labels == k]
+        sizes.append((labels == k).sum())
+        y_mean.append(100 * y.loc[members].mean())
+        y_std.append(100 * y.loc[members].std())
+    order = np.argsort(sizes)                # reorder ALL series consistently
+    sizes = np.array(sizes)[order]
+    y_mean = np.array(y_mean)[order]
+    y_std = np.array(y_std)[order]
+
+    plt.figure(figsize=(12, 10))
+    plt.scatter(range(n_clusters), sizes, s=np.nan_to_num(y_mean, nan=10.0))
+    plt.errorbar(range(n_clusters), sizes, yerr=np.nan_to_num(y_std), fmt='o')
+    plt.xlabel('cluster (sorted by size)')
+    plt.ylabel('cluster size')
+    save('kclasses')
+
+    # 8 optional UMAP embedding
+    if args.umap:
+        try:
+            import umap
+            import umap.plot
+        except ImportError:
+            print("umap-learn is not installed; skipping the UMAP section "
+                  "(pip install umap-learn).")
+            return
+        rng = np.random.RandomState(0)
+        take = rng.rand(len(X)) < 0.2
+        mapper = umap.UMAP(random_state=0).fit(X[take])
+        umap.plot.points(mapper)
+        save('umap')
+        umap.plot.diagnostic(mapper, diagnostic_type='pca')
+        save('umap_diagnostics')
+        umap.plot.connectivity(mapper, show_points=True)
+        save('umap_connectivity')
+
+
+if __name__ == '__main__':
+    main()

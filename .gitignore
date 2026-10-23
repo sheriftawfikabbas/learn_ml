@@ -16,3 +16,9 @@ token.pickle
 # Generated outputs
 comments.csv
 output
+breast_cancer_data_clean.csv
+Classes/Class04_EnsembleLearning/cell_sample.png
+Classes/Class04_EnsembleLearning/accuracy_loss.png
+
+# Upgrade tooling
+.scratch/

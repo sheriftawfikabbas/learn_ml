@@ -1,4 +1,4 @@
-,fruit,price
-0,apple,4.0
-1,banana,3.5
-2,pear,2.0
+,fruit,price,color
+0,apple,4.0,red
+1,banana,3.5,yellow
+2,pear,2.0,green
