@@ -1,125 +1,134 @@
-from pymatgen.io.cif import CifParser
-from urllib.request import urlopen
-import pandas as pd
-import matplotlib.pyplot as plt
-import pandas as pd
+"""rosa descriptors: structure -> sDFT spectral fingerprint (109 components).
+
+"rosa" featurises a structure with a **single-shot DFT** calculation: a GPAW
+LCAO job whose SCF cycle is capped at ``maxiter=1`` (deliberately NOT
+converged). The trick — the "sDFT" idea — is that a one-iteration calculation
+already produces a sensible one-electron spectrum at a tiny fraction of a
+converged calculation's cost. Treat the resulting numbers as fingerprints,
+not as physical observables.
+
+Feature layout (``descriptor_size=100`` -> 109 features)
+---------------------------------------------------------
+[0:50]    eigenvalues BELOW the Fermi level, ascending, VALENCE-side:
+          the 50 closest lie at the END of the block (feature 49 = HOMO).
+          Fewer than 50 states -> zero-padded at the START of the block.
+[50:100]  eigenvalues ABOVE the Fermi level, ascending (feature 50 = LUMO);
+          fewer than 50 -> zero-padded at the END of the block.
+[100]     the Fermi level itself
+[101:109] Hamiltonian energy terms, per atom: band, Coulomb, entropy,
+          external, kinetic, kinetic(0), XC, total-free energies.
+
+Interface
+---------
+``descriptors(x)`` accepts:
+- an ASE ``Atoms`` object (molecules, CaseStudy03), or
+- a CIF *string* (crystals, CaseStudy02/07; parsed with pymatgen and
+  converted to ASE Atoms with periodic boundary conditions).
+
+It returns a list of 109 floats, or ``[]`` if the calculator failed (the
+generator scripts skip such rows with a warning).
+
+Requirements: GPAW plus PAW setup files. Point the environment variable
+``GPAW_SETUP_PATH`` at your setups directory (e.g. .../gpaw-setups-0.9.20000);
+paw-file availability is checked from there. Elements without a setup raise
+a clear error instead of the historical silent Yttrium substitution.
+
+NOTE on committed artefacts: CaseStudy07's committed dataset_rosa.csv has
+218 columns = 109 pristine + 109 legacy "perturbed-copy" features. The
+perturbation body in the legacy module was an always-False comparison and the
+second copy was an expensive duplicate; it has been removed. Regenerating the
+dataset now produces 109 features; ml.py works with either width.
+"""
+
+import os
+
 import numpy as np
-from ase.build import bulk, niggli_reduce
-from gpaw import GPAW, PW, FermiDirac
-from ase.io import read
-import pandas as pd
 
-import glob
+_SETUP_DIR = os.environ.get('GPAW_SETUP_PATH', '')
 
-g = glob.glob(
-    '/mnt/c/MyCodes/MaterialScience/GPAW/gpaw-setups-0.9.20000/*.PBE.gz')
 
-available_atoms = []
-for i in g:
-    available_atoms += [i.replace(
-        '/mnt/c/MyCodes/MaterialScience/GPAW/gpaw-setups-0.9.20000/', '').split('.')[0]]
+def _available_elements():
+    if not _SETUP_DIR:
+        return None   # unknown; validation disabled
+    import glob
+    files = glob.glob(os.path.join(_SETUP_DIR, '*.PBE.gz'))
+    return {os.path.basename(f).split('.')[0] for f in files}
 
 
 def fix_psuedo(a):
-    for i in range(len(a)):
-        if not a[i].symbol in available_atoms:
-            print(a[i].symbol, 'is not available in GPAW, replacing it with Y')
-            a[i].symbol = 'Y'
+    """Check every element has a PAW setup; otherwise refuse, loudly.
+
+    (Kept name for compatibility; this historical helper SILENTLY replaced
+    missing elements with Yttrium, corrupting the chemistry without a record.
+    It now raises instead.)"""
+    available = _available_elements()
+    if available is None:
+        return
+    missing = sorted({a[i].symbol for i in range(len(a)) if a[i].symbol not in available})
+    if missing:
+        raise ValueError(f"no GPAW PAW setup for {missing} in {_SETUP_DIR}")
 
 
-def get_descriptors_for_structure(a):
-    calc = GPAW(mode='lcao',
-                xc='PBE',
-                maxiter=1,
-                # nbands=100,
-                # parallel={'domain': 1, 'band': 1},
-                # occupations=FermiDirac(width=0.01),
-                convergence={'density': 1},
-                kpts=[1, 1, 1],
+def get_descriptors_for_structure(a, descriptor_size=100):
+    """Run the one-shot GPAW calculation and pack the spectral fingerprint.
+
+    Parameters
+    ----------
+    a : ase.Atoms
+    descriptor_size : int, split evenly below/above the Fermi level
+    """
+    from gpaw import GPAW   # lazy: importing this module must not need GPAW
+
+    half = descriptor_size // 2
+    calc = GPAW(mode='lcao', xc='PBE', maxiter=1,
+                convergence={'density': 1}, kpts=[1, 1, 1],
                 txt='gpaw_lcao.txt')
-
-    # a.set_calculator(calc)
     calc.calculate(a)
-    H = calc.hamiltonian
-    descriptors_below = []
-    descriptors_above = []
 
     num_atoms = a.get_global_number_of_atoms()
-
-    ev = pd.DataFrame(calc.get_eigenvalues())
+    eigenvalues = np.sort(calc.get_eigenvalues())
     ef = calc.get_fermi_level()
-    ev_below = ev.loc[ev.values <= ef]
-    ev_above = ev.loc[ev.values > ef]
 
-    for e in ev_below.values.tolist()[::-1]:
-        descriptors_below += e
-    if len(ev_below) > 50:
-        descriptors_below = descriptors_below[0:50]
-    elif len(ev_below) < 50:
-        for e in range(50-len(ev_below)):
-            descriptors_below += [0]
-    descriptors_below = descriptors_below[::-1]
+    below = eigenvalues[eigenvalues <= ef][-half:]   # ascending, HOMO last
+    above = eigenvalues[eigenvalues > ef][:half]     # ascending, LUMO first
+    below = np.pad(below.tolist(), (half - len(below), 0))
+    above = np.pad(above.tolist(), (0, half - len(above)))
 
-    for e in ev_above.values.tolist():
-        descriptors_above += e
-    if len(ev_above) > 50:
-        descriptors_above = descriptors_above[0:50]
-    elif len(ev_above) < 50:
-        for e in range(50-len(ev_above)):
-            descriptors_above += [0]
-
-    return descriptors_below + descriptors_above + \
-        [ef,
-         H.e_band/num_atoms,
-         H.e_coulomb/num_atoms,
-         H.e_entropy/num_atoms,
-         H.e_external/num_atoms,
-         H.e_kinetic/num_atoms,
-         H.e_kinetic0/num_atoms,
-         H.e_xc/num_atoms,
-         H.e_total_free/num_atoms]
+    H = calc.hamiltonian
+    return (below.tolist() + above.tolist() + [
+        ef,
+        H.e_band / num_atoms,
+        H.e_coulomb / num_atoms,
+        H.e_entropy / num_atoms,
+        H.e_external / num_atoms,
+        H.e_kinetic / num_atoms,
+        H.e_kinetic0 / num_atoms,
+        H.e_xc / num_atoms,
+        H.e_total_free / num_atoms,
+    ])
 
 
-def descriptors(cif):
-    import random
-    import string
-    import os
-    file_name = ''.join(random.choices(string.ascii_uppercase +
-                                       string.digits, k=10))
-    f = open(file_name+'.cif', 'w')
-    f.write(cif)
-    f.flush()
-    f.close
+def descriptors(x, descriptor_size=100, calculation_type='bulk'):
+    """Structure (ASE Atoms or CIF string) -> 109 rosa features, [] on failure."""
+    from ase import Atoms
+    from ase.build import niggli_reduce
 
-    d_pristine = []
-    d_changed = []
+    if isinstance(x, Atoms):
+        a = x.copy()
+    elif isinstance(x, str):
+        from pymatgen.io.cif import CifParser
+        structure = CifParser.from_str(x).parse_structures(primitive=True)[0]
+        a = Atoms(pbc=True, cell=structure.lattice.matrix,
+                  positions=structure.cart_coords,
+                  numbers=structure.atomic_numbers)
+    else:
+        raise TypeError(f"expected ASE Atoms or a CIF string, got {type(x)}")
 
     try:
-
-        a = read(file_name+'.cif')
-        niggli_reduce(a)
+        if calculation_type == 'bulk':
+            niggli_reduce(a)
         fix_psuedo(a)
-        d_pristine = get_descriptors_for_structure(a)
-      
-        a = read(file_name+'.cif')
-        niggli_reduce(a)
-        fix_psuedo(a)
-        max_atomic_number = max(a.numbers)
-        min_atomic_number = min(a.numbers)
-
-        if max_atomic_number != max_atomic_number:
-            for i in range(len(a)):
-                if a[i].number == max_atomic_number:
-                    a[i].number -= 1
-                elif a[i].number == min_atomic_number:
-                    a[i].number += 1
-
-        d_changed = get_descriptors_for_structure(a)
-        os.remove(file_name+'.cif')
+        return get_descriptors_for_structure(a, descriptor_size)
     except Exception as e:
-        print('Problem in GPAW')
-        os.remove(file_name+'.cif')
-    if len(d_changed) > 0 and len(d_pristine) > 0:
-        return d_pristine + d_changed
-    else:
+        print(f"descriptors failed ({type(e).__name__}): {e}")
         return []

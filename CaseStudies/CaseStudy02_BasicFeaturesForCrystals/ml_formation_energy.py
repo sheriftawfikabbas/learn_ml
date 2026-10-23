@@ -1,118 +1,101 @@
-# !pip3 install pymatgen xgboost sklearn pandas
+"""Train regressors to predict formation energy per atom from bacd descriptors.
 
-from xgboost import XGBClassifier, plot_importance
-from sklearn import linear_model, decomposition, datasets
-from sklearn import svm
-from sklearn.ensemble import RandomForestClassifier
+Inputs
+------
+BandGap/Dataset/dataset_bacd.csv   descriptor table (prepare_dataset_bacd.py)
+../dataset_energies.csv            DFT energies, with column
+                                   ``formation_energy_per_atom`` (see README.md)
+
+Methodology notes
+-----------------
+- The data is split BEFORE the scaler is fit: fitting the scaler on the whole
+  dataset would leak test-set information into training.
+- ``random_state`` is fixed so runs are reproducible — always do this in
+  experiments you intend to compare.
+- Metrics and parity plots are produced for every model in MODELS, on both
+  the held-out test split and the training split. A large train/test gap
+  signals overfitting; this is why a sane ``max_depth`` matters.
+"""
+
 import os
-import warnings
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import KFold
-from sklearn.model_selection import cross_val_score
-from sklearn.metrics import roc_auc_score
+
 import joblib
-import importlib
-import json
-from pymatgen.io.cif import CifParser
-from urllib.request import urlopen
-import pandas as pd
-from pymatgen.ext.matproj import MPRester
-from pymatgen.ext.matproj import MPRestError
 import matplotlib.pyplot as plt
-import pandas as pd
-from sklearn.preprocessing import StandardScaler, MaxAbsScaler
-from sklearn.metrics import mean_squared_error, r2_score
-from xgboost import XGBRegressor
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.impute import SimpleImputer
 import numpy as np
-from sklearn.metrics import average_precision_score, precision_score
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVR
+from xgboost import XGBRegressor
 
-full_dataset_df = pd.read_csv('BandGap/Dataset/dataset_bacd.csv', index_col='material_id')
-# full_dataset_df = pd.read_csv('Figures_v6/dataset.csv', index_col=0)
-# Data visualization: let's have a look at our data.
-folder = 'formation_energy_per_atom'
-figfolder=folder+'/Figures/'
+DATASET_CSV = 'BandGap/Dataset/dataset_bacd.csv'
+ENERGIES_CSV = '../dataset_energies.csv'
+TARGET = 'formation_energy_per_atom'
+OUT_DIR = TARGET  # figures and models go under formation_energy_per_atom/
 
-energies_df = pd.read_csv(
-    '../dataset_energies.csv', index_col='material_id')
-energies_df = energies_df['formation_energy_per_atom']
-full_dataset_df = pd.merge(
-    full_dataset_df, energies_df, left_index=True, right_index=True)
-
-full_dataset_df = full_dataset_df.drop(
-index=full_dataset_df.index[np.isinf(full_dataset_df).any(1)])
-
-full_dataset_df = full_dataset_df.drop(
-    index=full_dataset_df.index[np.isnan(full_dataset_df).any(1)])
-
-for c in full_dataset_df.columns:
-    if 'Unnamed' in c:
-        del full_dataset_df[c]
-
-print('Dataset size:',full_dataset_df.shape)
-numXColumns = full_dataset_df.shape[1]-1
-X = full_dataset_df.iloc[:, :numXColumns]
-y = full_dataset_df['formation_energy_per_atom']
-X_train_scaled, X_test_scaled, y_train, y_test = train_test_split(
-    X, y, test_size=.2, random_state=None)
-
-scaler = StandardScaler().fit(X_train_scaled)
-X_train_scaled = scaler.transform(X_train_scaled)
-X_test_scaled = scaler.transform(X_test_scaled)
-from pickle import dump
-dump(scaler, open(folder+
-                      '/SavedModels/regression_scaler.pkl', 'wb'))
-
-regr_names = ['XGBOOST', 'RF', 'SVM']
-regr_objects = [XGBRegressor(n_estimators=100, max_depth=100, random_state=0),
-                RandomForestRegressor(
-                    n_estimators=400, max_depth=400, random_state=0),
-                svm.SVR(kernel='rbf', epsilon=0.1, verbose=True)
-                # RVR(kernel='rbf', n_iter=10000, tol=0.0001, verbose=True),
-                # linear_model.HuberRegressor(
-                #     epsilon=1.35, max_iter=100, alpha=0.0001, warm_start=False, fit_intercept=True, tol=1e-05),
-
-                ]
-
-for regr_choice in range(0, 1):
-
-    regr = regr_objects[regr_choice]
-    regr_name = regr_names[regr_choice]
-
-    regr.fit(X_train_scaled, y_train)
-
-    y_predicted = regr.predict(X_test_scaled)
-
-    print(regr_name+' MSE\t'+str(mean_squared_error(y_test, y_predicted))+'\n')
-    print(regr_name+' R2\t'+str(r2_score(y_test, y_predicted))+'\n')
-
-    xPlot = y_test
-    yPlot = y_predicted
-    plt.figure(figsize=(10, 10))
-    plt.plot(xPlot, yPlot, 'ro')
-    plt.plot(xPlot, xPlot)
-    plt.ylabel('RF')
-    plt.xlabel('DFT')
-    plt.savefig(figfolder+regr_name +
-                '_Regression_Correlation_Test', bbox_inches='tight')
-
-    y_predicted = regr.predict(X_train_scaled)
-
-    print(regr_name+' MSE\t'+str(mean_squared_error(y_train, y_predicted))+'\n')
-    print(regr_name+' R2\t'+str(r2_score(y_train, y_predicted))+'\n')
+# Keyed by display name so parity-plot labels can never drift from the model.
+MODELS = {
+    'XGBOOST': XGBRegressor(n_estimators=100, max_depth=10, random_state=0),
+    'RF': RandomForestRegressor(n_estimators=400, random_state=0, n_jobs=-1),
+    'SVM': SVR(kernel='rbf', epsilon=0.1),
+}
 
 
-    xPlot = y_train
-    yPlot = y_predicted
-    plt.figure(figsize=(10, 10))
-    plt.plot(xPlot, yPlot, 'ro')
-    plt.plot(xPlot, xPlot)
-    plt.ylabel('RF')
-    plt.xlabel('DFT')
-    plt.savefig(figfolder+regr_name +
-                '_Regression_Correlation_Train', bbox_inches='tight')
+def main():
+    for path in (DATASET_CSV, ENERGIES_CSV):
+        if not os.path.exists(path):
+            raise SystemExit(f"missing input: {path} — see README.md for the pipeline")
 
-    joblib.dump(regr, folder+'/SavedModels/'+regr_name+'_Regression.pkl')
+    dataset = pd.read_csv(DATASET_CSV, index_col='material_id')
+    energies = pd.read_csv(ENERGIES_CSV, index_col='material_id')[TARGET]
+    df = dataset.join(energies, how='inner')
 
+    df = df.drop(columns=[c for c in df.columns if 'Unnamed' in c])
+    df = df.replace([np.inf, -np.inf], np.nan).dropna()
+    print('Dataset size:', df.shape)
+
+    X = df.drop(columns=[TARGET])
+    y = df[TARGET]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=0)
+
+    # fit the scaler on TRAIN ONLY — test statistics must stay unseen
+    scaler = StandardScaler().fit(X_train)
+    X_train_scaled = scaler.transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    fig_dir = os.path.join(OUT_DIR, 'Figures')
+    model_dir = os.path.join(OUT_DIR, 'SavedModels')
+    os.makedirs(fig_dir, exist_ok=True)
+    os.makedirs(model_dir, exist_ok=True)
+    joblib.dump(scaler, os.path.join(model_dir, 'regression_scaler.pkl'))
+
+    def parity_plot(y_true, y_pred, name, split):
+        plt.figure(figsize=(10, 10))
+        plt.plot(y_true, y_pred, 'ro')
+        lims = [min(y_true.min(), y_pred.min()), max(y_true.max(), y_pred.max())]
+        plt.plot(lims, lims, 'k-')
+        plt.ylabel(f'{name} (predicted)')
+        plt.xlabel('DFT (actual)')
+        plt.title(f'{name} — {split}')
+        plt.savefig(os.path.join(fig_dir, f'{name}_Regression_Correlation_{split}.png'),
+                    bbox_inches='tight')
+        plt.close()
+
+    for name, regr in MODELS.items():
+        regr.fit(X_train_scaled, y_train)
+
+        for split, Xs, ys in [('Test', X_test_scaled, y_test),
+                              ('Train', X_train_scaled, y_train)]:
+            y_pred = regr.predict(Xs)
+            print(f'{name} {split:<6s} MSE {mean_squared_error(ys, y_pred):.4f} | '
+                  f'R2 {r2_score(ys, y_pred):.4f}')
+            parity_plot(np.asarray(ys), y_pred, name, split)
+
+        joblib.dump(regr, os.path.join(model_dir, f'{name}_Regression.pkl'))
+
+
+if __name__ == '__main__':
+    main()

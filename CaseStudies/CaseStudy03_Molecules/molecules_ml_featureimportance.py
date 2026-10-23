@@ -1,121 +1,85 @@
-# pip3 install cmake --user
-# pip3 install xgboost --user
-# pip3 install sklearn pandas keras --user
+"""Group XGBoost feature importances into the physical descriptor blocks.
 
-from operator import index
-from xgboost import XGBClassifier, plot_importance
-from sklearn import linear_model, decomposition, datasets
-from sklearn import svm
-from sklearn.ensemble import RandomForestClassifier
+For every trained model found in Molecules/SavedModels (named
+{property}_XGBOOST_Regression.pkl, trained by molecule_ml_bandgap.py), the
+total_gain importance of each feature is summed into three PHYSICAL groups:
+
+- VBM      : the 50 eigenvalues below the Fermi level (valence-band-edge
+             character)
+- CBM      : the 50 eigenvalues above the Fermi level (conduction-band-edge
+             character)
+- energies : the Fermi level and the 8 per-atom Hamiltonian energy terms
+
+and rendered as a heatmap (rows = predicted properties), so you can read
+which physics the model actually consults. Importances are reported as
+percentages of the total gain; since all 109 features are assigned to a
+group here, the three values per property sum to 100% by construction.
+
+Feature-name reference: molecules_column_names_sdft.csv (written by
+molecules_generate_sdft_expanded_index.py).
+"""
+
 import os
-import warnings
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import KFold
-from sklearn.model_selection import cross_val_score
-from sklearn.metrics import roc_auc_score
+
 import joblib
-import importlib
-import json
-import pandas as pd
 import matplotlib.pyplot as plt
 import pandas as pd
-from sklearn.preprocessing import StandardScaler, MaxAbsScaler
-from sklearn.metrics import mean_squared_error, r2_score, mean_absolute_error
-
-from xgboost import XGBRegressor
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.impute import SimpleImputer
-import numpy as np
-from sklearn.metrics import average_precision_score, precision_score
-
-
 import seaborn as sns
-import matplotlib.pyplot as plt
 
-plt.rcParams.update({'font.size': 40})
-importance_types = ['weight', 'gain', 'cover', 'total_gain', 'total_cover']
-# for importance_type in importance_types:
-importance_type = importance_types[3]
+MODEL_DIR = 'Molecules/SavedModels'
+NAMES_CSV = 'molecules_column_names_sdft.csv'
+FIG_DIR = 'Molecules/Figures'
 
-column_names = pd.read_csv('molecules_column_names_sdft.csv', index_col='material_id')
-column_names = column_names.columns
-properties = ['gap', 'alpha','G']
-property_names = ['$E_{HOMO-LUMO}$', r'$\alpha$', '$G$']
-prefixes = ['f', 'f', 'f']
+PROPERTY_NAMES = {'gap': r'$E_{\mathrm{HOMO-LUMO}}$',
+                  'alpha': r'$\alpha$',
+                  'G': '$G$'}
+# group label -> feature-name test
+GROUPS = [
+    ('VBM', lambda n: n.startswith('Pristine_SDFT_BelowFermi')),
+    ('CBM', lambda n: n.startswith('Pristine_SDFT_AboveFermi')),
+    ('energies', lambda n: n.startswith('Pristine_SDFT_e')),
+]
 
 
-row_list = []
-feature_data_df = pd.DataFrame()
-for iproperty in range(3):
+def main():
+    column_names = pd.read_csv(NAMES_CSV, nrows=0).columns.tolist()
 
-    print('Working on', properties[iproperty])
-    feature_group = []
-    group_score = []
-    property = []
-    figfolder = 'Molecules/Figures/'
+    rows = []
+    for prop, pretty in PROPERTY_NAMES.items():
+        model_file = os.path.join(MODEL_DIR, f'{prop}_XGBOOST_Regression.pkl')
+        if not os.path.exists(model_file):
+            print(f'skipping {prop}: {model_file} not found '
+                  '(run molecule_ml_bandgap.py)')
+            continue
+        regr = joblib.load(model_file)
+        importance = regr.get_booster().get_score(importance_type='total_gain')
 
-    regr = joblib.load(
-       'Molecules/SavedModels/'+properties[iproperty]+'_' 
-            + 'XGBOOST_Regression.pkl')
+        # booster names features f0..f108 positionally unless fit with names
+        scores = pd.Series(
+            {name: importance.get(f'f{i}', 0.0)
+             for i, name in enumerate(column_names)})
 
-    importance = regr.get_booster().get_score(importance_type=importance_type)
-    keys = list(importance.keys())
-    values = list(importance.values())
-    imp = []
-    prefix = prefixes[iproperty]
-    for k in range(len(column_names)):
-        if prefix+str(k) in keys:
-            imp += [importance[prefix+str(k)]]
-        else:
-            imp += [0]
+        total = scores.sum()
+        row = {}
+        for group_label, test in GROUPS:
+            row[group_label] = 100 * scores[[test(n) for n in column_names]].sum() / total
+        rows.append(pd.Series(row, name=pretty))
+        print(f'{prop}: VBM {row["VBM"]:.1f}% | CBM {row["CBM"]:.1f}% | '
+              f'energies {row["energies"]:.1f}%  (sum {sum(row.values()):.1f}%)')
 
-    feature_importances = pd.DataFrame(data=imp, index=column_names, columns=[
-        "score"]).sort_values(by="score", ascending=False)
+    if not rows:
+        raise SystemExit('no trained models found; nothing to plot')
 
-    total_scores = feature_importances.sum().values[0]
+    feature_data = pd.DataFrame(rows)
+    os.makedirs(FIG_DIR, exist_ok=True)
+    plt.figure(figsize=(10, 6))
+    sns.heatmap(feature_data, annot=True, fmt='.1f', cmap='viridis')
+    plt.ylabel('')
+    plt.tight_layout()
+    out = os.path.join(FIG_DIR, 'molecules_featureimportances_heatmap_total_gain.png')
+    plt.savefig(out, bbox_inches='tight')
+    print('wrote', out)
 
-    Pristine_SDFT_BelowFermi = feature_importances.loc[feature_importances.index.str.startswith(
-        'Pristine_SDFT_BelowFermi')].count()[0]
-    Pristine_SDFT_AboveFermi = feature_importances.loc[feature_importances.index.str.startswith(
-        'Pristine_SDFT_AboveFermi')].count()[0]
-    Pristine_SDFT_e = feature_importances.loc[feature_importances.index.str.startswith(
-        'Pristine_SDFT_e')].count()[0]
-    print('Number of descriptors:', Pristine_SDFT_BelowFermi +
-          Pristine_SDFT_AboveFermi+Pristine_SDFT_e)
 
-    feature_group += ['VBM']
-    group_score += [
-        feature_importances.loc[feature_importances.index.str.startswith('Pristine_SDFT_BelowFermi')].sum().values[0]/total_scores*100]
-    feature_group += ['CBM']
-    group_score += [
-        feature_importances.loc[feature_importances.index.str.startswith('Pristine_SDFT_AboveFermi')].sum().values[0]/total_scores*100]
-    feature_group += ['$e$']
-    group_score += [
-        feature_importances.loc[feature_importances.index.str.startswith('Pristine_SDFT_e')].sum().values[0]/total_scores*100]
-    print('Verify totals:',sum(group_score))
-    row_df = pd.DataFrame(
-        [[property_names[iproperty]]+group_score], columns=['property']+feature_group)
-    feature_data_df = feature_data_df.append(row_df)
-    """
-    import shap
-    X_test_scaled = pd.read_csv(
-        properties[iproperty]+'/Dataset/X_test_scaled.csv')
-    del X_test_scaled['Unnamed: 0']
-    print('Done loading X_test_scaled')
-    explainer = shap.TreeExplainer(regr,feature_names=column_names)
-    print('Done creating explainer')
-    shap_values = explainer(X_test_scaled.sample(frac=1000/X_test_scaled.shape[0]),check_additivity=False)
-    print('Done calculating shap values')
-    plt.figure(figsize=(10, 10))
-    shap.plots.beeswarm(shap_values,max_display=6)
-    plt.savefig(figfolder+'SHAP_beeswarm_XGBOOST_Regression_Correlation_Test', bbox_inches='tight')
-    plt.clf()
-    """
-feature_data_df=feature_data_df.set_index('property')
-plt.figure(figsize=(20, 20))
-plt.rcParams.update({'font.size': 60})
-sns.heatmap(feature_data_df, annot=True, fmt='.2f')
-# sns.set(font_scale=0.2)
-plt.ylabel('')
-plt.savefig('molecules_featureimportances_heatmap_'+importance_type, bbox_inches='tight')
+if __name__ == '__main__':
+    main()

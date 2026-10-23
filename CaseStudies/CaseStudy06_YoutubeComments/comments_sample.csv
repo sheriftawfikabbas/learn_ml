@@ -1,0 +1,97 @@
+video_id,title,text,time,label
+vid000001,ML tutorial,Totally nobody asked for 40 minutes of this,2023-06-12T11:00:00Z,negative
+vid000003,ML tutorial,Thanks for covering the messy data problems honestly,2023-05-11T10:00:00Z,positive
+vid000002,ML tutorial,"Music too loud, voice too quiet",2023-06-13T11:00:00Z,negative
+vid000000,ML tutorial,The dataset link is broken !!,2023-06-14T11:00:00Z,negative
+vid000004,ML tutorial,"So clear and well structured, well done",2023-05-15T10:00:00Z,positive
+vid000002,ML tutorial,Cannot reproduce any of these results !!,2023-06-26T11:00:00Z,negative
+vid000004,ML tutorial,The dataset link is broken,2023-06-13T11:00:00Z,negative
+vid000000,ML tutorial,Why do you never explain the maths properly,2023-06-09T11:00:00Z,negative
+vid000000,ML tutorial,"Video stops at the worst moment, unfinished tutorial",2023-06-19T11:00:00Z,negative
+vid000002,ML tutorial,Very disappointing content !,2023-06-18T11:00:00Z,negative
+vid000003,ML tutorial,Zero effort went into this,2023-06-19T11:00:00Z,negative
+vid000004,ML tutorial,Really the example with real data made all the difference,2023-05-10T10:00:00Z,positive
+vid000000,ML tutorial,This is the best explanation of SARIMAX I have found !,2023-05-06T10:00:00Z,positive
+vid000000,ML tutorial,"So clear and well structured, well done !!",2023-05-16T10:00:00Z,positive
+vid000001,ML tutorial,"This code does not even run, fix your tutorial",2023-06-05T11:00:00Z,negative
+vid000004,ML tutorial,Loved the honest discussion of model failures,2023-05-25T10:00:00Z,positive
+vid000002,ML tutorial,"Boring and repetitive, could be 5 minutes",2023-06-11T11:00:00Z,negative
+vid000000,ML tutorial,Excellent balance of theory and practice,2023-05-13T10:00:00Z,positive
+vid000002,ML tutorial,Thank you for explaining the differencing step so clearly,2023-05-03T10:00:00Z,positive
+vid000002,ML tutorial,"Misleading title, nothing about ensembles here",2023-06-21T11:00:00Z,negative
+vid000003,ML tutorial,"Honestly, the audio quality makes this unwatchable",2023-06-02T11:00:00Z,negative
+vid000001,ML tutorial,"Brilliant, exactly what I needed for my assignment !!",2023-05-12T10:00:00Z,positive
+vid000002,ML tutorial,Please make more case studies like this !,2023-05-28T10:00:00Z,positive
+vid000002,ML tutorial,"Instructions unclear, got stuck immediately !!",2023-06-08T11:00:00Z,negative
+vid000002,ML tutorial,"Clickbait, this is just reading documentation",2023-06-03T11:00:00Z,negative
+vid000004,ML tutorial,Code in the repo does not match the video,2023-06-15T11:00:00Z,negative
+vid000003,ML tutorial,You skipped the most important part,2023-06-17T11:00:00Z,negative
+vid000002,ML tutorial,The ensemble voting example was eye opening !,2023-05-10T10:00:00Z,positive
+vid000003,ML tutorial,"Honestly, misleading title, nothing about ensembles here",2023-06-22T11:00:00Z,negative
+vid000001,ML tutorial,Cannot reproduce any of these results,2023-06-25T11:00:00Z,negative
+vid000003,ML tutorial,"Totally clickbait, this is just reading documentation",2023-06-04T11:00:00Z,negative
+vid000002,ML tutorial,"incredible content, subscribed !",2023-05-08T10:00:00Z,positive
+vid000003,ML tutorial,The examples are too trivial to learn from,2023-06-27T11:00:00Z,negative
+vid000003,ML tutorial,The notebook link in the description is gold,2023-05-01T10:00:00Z,positive
+vid000003,ML tutorial,Your explanation of train test split saved my project !,2023-05-14T10:00:00Z,positive
+vid000004,ML tutorial,This is the best explanation of SARIMAX I have found,2023-05-05T10:00:00Z,positive
+vid000002,ML tutorial,Your explanation of train test split saved my project,2023-05-13T10:00:00Z,positive
+vid000001,ML tutorial,Really stop mumbling please,2023-06-02T11:00:00Z,negative
+vid000000,ML tutorial,Nobody asked for 40 minutes of this,2023-06-11T11:00:00Z,negative
+vid000000,ML tutorial,"Awesome walkthrough, keep it up",2023-05-03T10:00:00Z,positive
+vid000001,ML tutorial,"incredible content, subscribed",2023-05-07T10:00:00Z,positive
+vid000002,ML tutorial,Your plotting tips alone are worth the watch,2023-05-15T10:00:00Z,positive
+vid000001,ML tutorial,Superb quality as always,2023-05-19T10:00:00Z,positive
+vid000001,ML tutorial,"Instructions unclear, got stuck immediately",2023-06-07T11:00:00Z,negative
+vid000000,ML tutorial,Loved the honest discussion of model failures !,2023-05-26T10:00:00Z,positive
+vid000004,ML tutorial,"Awful, do not waste your time",2023-06-05T11:00:00Z,negative
+vid000000,ML tutorial,Code in the repo does not match the video !!,2023-06-16T11:00:00Z,negative
+vid000000,ML tutorial,"Awful, do not waste your time !",2023-06-06T11:00:00Z,negative
+vid000003,ML tutorial,Thank you for explaining the differencing step so clearly !,2023-05-04T10:00:00Z,positive
+vid000002,ML tutorial,Superb quality as always !,2023-05-20T10:00:00Z,positive
+vid000003,ML tutorial,Totally your plotting tips alone are worth the watch,2023-05-16T10:00:00Z,positive
+vid000001,ML tutorial,Excellent balance of theory and practice !!,2023-05-14T10:00:00Z,positive
+vid000003,ML tutorial,"Really boring and repetitive, could be 5 minutes",2023-06-12T11:00:00Z,negative
+vid000002,ML tutorial,You explain complex topics so simply,2023-05-05T10:00:00Z,positive
+vid000003,ML tutorial,"outdated libraries, waste of time",2023-06-07T11:00:00Z,negative
+vid000004,ML tutorial,"Saved me hours of debugging, thank you",2023-05-17T10:00:00Z,positive
+vid000003,ML tutorial,The example with real data made all the difference,2023-05-09T10:00:00Z,positive
+vid000000,ML tutorial,This channel is a hidden gem,2023-05-21T10:00:00Z,positive
+vid000004,ML tutorial,You skipped the most important part !!,2023-06-18T11:00:00Z,negative
+vid000004,ML tutorial,"Honestly, thanks for covering the messy data problems honestly",2023-05-12T10:00:00Z,positive
+vid000001,ML tutorial,"Video stops at the worst moment, unfinished tutorial !",2023-06-20T11:00:00Z,negative
+vid000004,ML tutorial,Really appreciate the worked solutions,2023-05-07T10:00:00Z,positive
+vid000001,ML tutorial,Please make more case studies like this,2023-05-27T10:00:00Z,positive
+vid000003,ML tutorial,"Perfect pacing, not too fast",2023-05-19T10:00:00Z,positive
+vid000000,ML tutorial,"Great tutorial, this finally clicked for me",2023-05-01T10:00:00Z,positive
+vid000004,ML tutorial,Zero effort went into this !,2023-06-20T11:00:00Z,negative
+vid000003,ML tutorial,You explain complex topics so simply !,2023-05-06T10:00:00Z,positive
+vid000003,ML tutorial,Totally learned more here than in a whole semester,2023-05-24T10:00:00Z,positive
+vid000001,ML tutorial,"Terrible explanation, more confused than before",2023-06-15T11:00:00Z,negative
+vid000001,ML tutorial,"Great tutorial, this finally clicked for me !",2023-05-02T10:00:00Z,positive
+vid000000,ML tutorial,Totally downloads as errors only,2023-06-24T11:00:00Z,negative
+vid000000,ML tutorial,Stop mumbling please,2023-06-01T11:00:00Z,negative
+vid000004,ML tutorial,"Honestly, the examples are too trivial to learn from",2023-06-28T11:00:00Z,negative
+vid000002,ML tutorial,Learned more here than in a whole semester,2023-05-23T10:00:00Z,positive
+vid000003,ML tutorial,"Honestly, music too loud, voice too quiet",2023-06-14T11:00:00Z,negative
+vid000004,ML tutorial,"Honestly, perfect pacing, not too fast",2023-05-20T10:00:00Z,positive
+vid000004,ML tutorial,The notebook link in the description is gold !,2023-05-02T10:00:00Z,positive
+vid000002,ML tutorial,The audio quality makes this unwatchable,2023-06-01T11:00:00Z,negative
+vid000000,ML tutorial,"Totally saved me hours of debugging, thank you",2023-05-18T10:00:00Z,positive
+vid000002,ML tutorial,"Honestly, this code does not even run, fix your tutorial",2023-06-06T11:00:00Z,negative
+vid000003,ML tutorial,This is completely wrong about cross validation,2023-06-09T11:00:00Z,negative
+vid000004,ML tutorial,"Honestly, this is completely wrong about cross validation",2023-06-10T11:00:00Z,negative
+vid000004,ML tutorial,"outdated libraries, waste of time !!",2023-06-08T11:00:00Z,negative
+vid000002,ML tutorial,I finally understand one hot encoding thanks !,2023-05-18T10:00:00Z,positive
+vid000000,ML tutorial,Really appreciate the worked solutions !,2023-05-08T10:00:00Z,positive
+vid000004,ML tutorial,Downloads as errors only,2023-06-23T11:00:00Z,negative
+vid000000,ML tutorial,"Really way too fast, nobody can follow this",2023-06-04T11:00:00Z,negative
+vid000001,ML tutorial,Totally why do you never explain the maths properly,2023-06-10T11:00:00Z,negative
+vid000001,ML tutorial,Really this channel is a hidden gem,2023-05-22T10:00:00Z,positive
+vid000000,ML tutorial,"Brilliant, exactly what I needed for my assignment",2023-05-11T10:00:00Z,positive
+vid000002,ML tutorial,"Terrible explanation, more confused than before !!",2023-06-16T11:00:00Z,negative
+vid000001,ML tutorial,Very disappointing content,2023-06-17T11:00:00Z,negative
+vid000004,ML tutorial,"Way too fast, nobody can follow this",2023-06-03T11:00:00Z,negative
+vid000001,ML tutorial,"Honestly, awesome walkthrough, keep it up",2023-05-04T10:00:00Z,positive
+vid000001,ML tutorial,I finally understand one hot encoding thanks,2023-05-17T10:00:00Z,positive
+vid000001,ML tutorial,The ensemble voting example was eye opening,2023-05-09T10:00:00Z,positive

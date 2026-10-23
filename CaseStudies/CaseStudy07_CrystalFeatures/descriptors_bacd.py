@@ -1,185 +1,108 @@
-from pymatgen.io.cif import CifParser
+"""bacd crystal descriptors: structure (CIF) -> 325-component feature vector.
+
+The function ``descriptors`` accepts either:
+- a CIF *string* (parsed with pymatgen), or
+- any object with ``.cell``, ``.symbols`` and ``.positions`` (e.g. ASE ``Atoms``,
+  pymatgen ``Structure``).
+
+Feature layout (calculation_type='bulk', 325 features)
+------------------------------------------------------
+[0:4]     atomic-number statistics (mean, max, min, std)
+[4]       cell volume per atom
+[5]       "empty" volume: V_cell - sum(4/3 * pi * r_ionic^3) over species.
+          A crude packing measure — it can be NEGATIVE when ionic radii
+          overlap; treat it as a heuristic, not a physical volume.
+[6]       metal fraction (see is_metal below)
+[7:11]    interatomic distance statistics (mean, max, min, std).
+          The minimum is computed over *off-diagonal* entries only; with the
+          diagonal included it is trivially 0 for every structure.
+[11:95]   21 elemental-property blocks x 4 statistics (mean, max, min, std
+          over the atoms in the compound). Missing (None) property values are
+          ZERO-IMPUTED: a simple, defensible choice that nonetheless conflates
+          "unknown" with "zero". Alternatives (mean-impute per property,
+          dropping the property block) are discussed in the case-study README.
+[95:325]  230-component space-group one-hot.
+
+With calculation_type='formula', the space-group/volume features vanish and
+the vector is shorter — the intention is comparing bulk crystals against
+formula-level aggregates, but note the vector layout CHANGES with this flag,
+so never mix rows featurised with different calculation_type in one table.
+"""
+
 import numpy as np
+from pymatgen.core import Structure
+from pymatgen.io.cif import CifParser
+from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
-def descriptors(cif):
+# The 21 per-atom properties, in the exact order of the feature blocks.
+# (Order is part of the featurisation contract - do not reorder.)
+_ELEMENTAL_PROPERTIES = [
+    'van_der_waals_radius', 'electrical_resistivity', 'velocity_of_sound',
+    'reflectivity', 'poissons_ratio', 'molar_volume', 'thermal_conductivity',
+    'melting_point', 'critical_temperature', 'superconduction_temperature',
+    'liquid_range', 'bulk_modulus', 'youngs_modulus', 'brinell_hardness',
+    'rigidity_modulus', 'vickers_hardness', 'density_of_solid',
+    'coefficient_of_linear_thermal_expansion', 'average_ionic_radius',
+    'average_cationic_radius', 'average_anionic_radius',
+]
 
-    atomic_numbers = []
+# Elemental metals: alkali + alkaline-earth + d-block (all series incl.
+# lanthanides/actinides) + post-transition metals Al, Ga, In, Sn, Tl, Pb, Bi,
+# Nh, Fl, Mc, Lv. Metalloids (B, Si, Ge, As, Sb, Te) are deliberately left out.
+_METAL_ZS = (
+    {3, 11, 19, 37, 55, 87}                       # alkali
+    | {4, 12, 20, 38, 56, 88}                    # alkaline earth
+    | set(range(21, 31)) | set(range(39, 49))    # 3d, 4d transition metals
+    | set(range(57, 72)) | set(range(72, 81))    # La-Lu, 5d
+    | set(range(89, 104)) | set(range(104, 113))  # Ac-Lr, 6d
+    | {13, 31, 49, 50, 81, 82, 83, 113, 114, 115, 116}
+)
 
-    distance_matrix = []
-    van_der_waals_radius = []
-    electrical_resistivity = []
-    velocity_of_sound = []
-    reflectivity = []
-    poissons_ratio = []
-    molar_volume = []
-    thermal_conductivity = []
-    melting_point = []
-    critical_temperature = []
-    superconduction_temperature = []
-    liquid_range = []
-    bulk_modulus = []
-    youngs_modulus = []
-    brinell_hardness = []
-    rigidity_modulus = []
-    # mineral_hardness = []
-    vickers_hardness = []
-    density_of_solid = []
-    coefficient_of_linear_thermal_expansion = []
-    average_ionic_radius = []
-    average_cationic_radius = []
-    average_anionic_radius = []
 
-    parser = CifParser.from_string(cif)
+def _stats(values):
+    """[mean, max, min, std], with None property values zero-imputed."""
+    vals = [0.0 if v is None else v for v in values]
+    return [float(np.mean(vals)), float(np.max(vals)),
+            float(np.min(vals)), float(np.std(vals))]
 
-    structure = parser.get_structures()
-    structure = structure[0]
 
-    numElements = len(structure.atomic_numbers)
+def descriptors(cif, calculation_type='bulk'):
+    """Compute the bacd feature vector for one structure; see module docstring."""
+    if isinstance(cif, str):
+        structure = CifParser.from_str(cif).parse_structures(primitive=True)[0]
+    else:
+        structure = Structure(lattice=cif.cell, species=cif.symbols,
+                              coords=cif.positions)
 
-    num_metals = 0
-    for e in structure.species:
-        if e.Z in range(3, 4+1) or e.Z in range(11, 12+1) or e.Z in range(19, 30+1) or e.Z in range(37, 48+1) or e.Z in range(55, 80 + 1) or e.Z in range(87, 112+1):
-            num_metals += 1
-    metals_fraction = num_metals/numElements
+    num_elements = len(structure.atomic_numbers)
+    num_metals = sum(1 for e in structure.species if e.Z in _METAL_ZS)
+    metals_fraction = num_metals / num_elements
 
-    spg = structure.get_space_group_info()
+    feats = [float(np.mean(structure.atomic_numbers)),
+             float(np.max(structure.atomic_numbers)),
+             float(np.min(structure.atomic_numbers)),
+             float(np.std(structure.atomic_numbers))]
 
-    spacegroup_numbers = {}
-    for i in range(1, 231):
-        spacegroup_numbers[i] = 0
+    if calculation_type == 'bulk':
+        volume = structure.volume
+        feats.append(float(volume / num_elements))
+        atom_volume = sum(4 / 3 * np.pi * e.average_ionic_radius ** 3
+                          for e in structure.species)
+        feats.append(float(volume - atom_volume))   # "empty" volume (heuristic)
 
-    spacegroup_numbers[spg[1]] = 1
+    feats.append(float(metals_fraction))
 
-    spacegroup_numbers_list = []
-    for i in range(1, 231):
-        spacegroup_numbers_list += [spacegroup_numbers[i]]
+    if calculation_type != 'formula':
+        dm = structure.distance_matrix
+        off_diag = dm[~np.eye(dm.shape[0], dtype=bool)]
+        feats += [float(np.mean(dm)), float(np.max(dm)),
+                  float(np.min(off_diag)), float(np.std(dm))]
 
-    atomic_numbers = [np.mean(structure.atomic_numbers), np.max(structure.atomic_numbers), np.min(
-        structure.atomic_numbers), np.std(structure.atomic_numbers)]
+    for prop in _ELEMENTAL_PROPERTIES:
+        feats += _stats([getattr(e, prop) for e in structure.species])
 
-    # Lattice parameters:
-    a_parameters = structure.lattice.abc[0]
-    b_parameters = structure.lattice.abc[1]
-    c_parameters = structure.lattice.abc[2]
-    alpha_parameters = structure.lattice.angles[0]
-    beta_parameters = structure.lattice.angles[1]
-    gamma_parameters = structure.lattice.angles[2]
+    if calculation_type == 'bulk':
+        spg_number = SpacegroupAnalyzer(structure).get_space_group_number()
+        feats += [1.0 if i == spg_number else 0.0 for i in range(1, 231)]
 
-    distance_matrix += [np.mean(structure.distance_matrix), np.max(structure.distance_matrix),
-                        np.min(structure.distance_matrix), np.std(structure.distance_matrix)]
-
-    e1, e2, e3, e4, e5, e6, e7, e8, e9, e10, e11, e12, e13, e14, e15, e16, e17, e18, e19, e20, e21, e22, e23 = [
-    ], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], [], []
-    for e in structure.species:
-        e1 += [e.van_der_waals_radius]
-        e2 += [e.electrical_resistivity]
-        e3 += [e.velocity_of_sound]
-        e4 += [e.reflectivity]
-        e6 += [e.poissons_ratio]
-        e7 += [e.molar_volume]
-        e8 += [e.thermal_conductivity]
-        e9 += [e.melting_point]
-        e10 += [e.critical_temperature]
-        e11 += [e.superconduction_temperature]
-        e12 += [e.liquid_range]
-        e13 += [e.bulk_modulus]
-        e14 += [e.youngs_modulus]
-        e15 += [e.brinell_hardness]
-        e16 += [e.rigidity_modulus]
-        # e17 +=[e.mineral_hardness ]
-        e18 += [e.vickers_hardness]
-        e19 += [e.density_of_solid]
-        e20 += [e.coefficient_of_linear_thermal_expansion]
-        e21 += [e.average_ionic_radius]
-        e22 += [e.average_cationic_radius]
-        e23 += [e.average_anionic_radius]
-
-    e1 = [0 if v is None else v for v in e1]
-    e2 = [0 if v is None else v for v in e2]
-    e3 = [0 if v is None else v for v in e3]
-    e4 = [0 if v is None else v for v in e4]
-    # e5=[0 if v is None else v for v in e5]
-    e6 = [0 if v is None else v for v in e6]
-    e7 = [0 if v is None else v for v in e7]
-    e8 = [0 if v is None else v for v in e8]
-    e9 = [0 if v is None else v for v in e9]
-    e10 = [0 if v is None else v for v in e10]
-    e11 = [0 if v is None else v for v in e11]
-    e12 = [0 if v is None else v for v in e12]
-    e13 = [0 if v is None else v for v in e13]
-    e14 = [0 if v is None else v for v in e14]
-    e15 = [0 if v is None else v for v in e15]
-    e16 = [0 if v is None else v for v in e16]
-    # e17=[0 if v is None else v for v in e17]
-    e18 = [0 if v is None else v for v in e18]
-    e19 = [0 if v is None else v for v in e19]
-    e20 = [0 if v is None else v for v in e20]
-    e21 = [0 if v is None else v for v in e21]
-    e22 = [0 if v is None else v for v in e22]
-    e23 = [0 if v is None else v for v in e23]
-
-    van_der_waals_radius = [np.mean(e1), np.max(e1), np.min(e1), np.std(e1)]
-    electrical_resistivity = [np.mean(e2), np.max(e2), np.min(e2), np.std(e2)]
-    velocity_of_sound = [np.mean(e3), np.max(e3), np.min(e3), np.std(e3)]
-    reflectivity = [np.mean(e4), np.max(e4), np.min(e4), np.std(e4)]
-    poissons_ratio = [np.mean(e6), np.max(e6), np.min(e6), np.std(e6)]
-    molar_volume = [np.mean(e7), np.max(e7), np.min(e7), np.std(e7)]
-    thermal_conductivity = [np.mean(e8), np.max(e8), np.min(e8), np.std(e8)]
-    melting_point = [np.mean(e9), np.max(e9), np.min(e9), np.std(e9)]
-    critical_temperature = [np.mean(e10), np.max(
-        e10), np.min(e10), np.std(e10)]
-    superconduction_temperature = [
-        np.mean(e11), np.max(e11), np.min(e11), np.std(e11)]
-    liquid_range = [np.mean(e12), np.max(e12), np.min(e12), np.std(e12)]
-    bulk_modulus = [np.mean(e13), np.max(e13), np.min(e13), np.std(e13)]
-    youngs_modulus = [np.mean(e14), np.max(e14), np.min(e14), np.std(e14)]
-    brinell_hardness = [np.mean(e15), np.max(e15), np.min(e15), np.std(e15)]
-    rigidity_modulus = [np.mean(e16), np.max(e16), np.min(e16), np.std(e16)]
-    vickers_hardness = [np.mean(e18), np.max(e18), np.min(e18), np.std(e18)]
-    density_of_solid = [np.mean(e19), np.max(e19), np.min(e19), np.std(e19)]
-    coefficient_of_linear_thermal_expansion = [
-        np.mean(e20), np.max(e20), np.min(e20), np.std(e20)]
-    average_ionic_radius = [np.mean(e21), np.max(
-        e21), np.min(e21), np.std(e21)]
-    average_cationic_radius = [
-        np.mean(e22), np.max(e22), np.min(e22), np.std(e22)]
-    average_anionic_radius = [
-        np.mean(e23), np.max(e23), np.min(e23), np.std(e23)]
-
-    V = structure.volume
-
-    volume_per_atom = V / numElements
-
-    atom_volume = 0
-    for e in structure.species:
-        atom_volume += 4/3*np.pi*e.average_ionic_radius**3
-    empty_volume = V - atom_volume
-
-    descriptors_list = atomic_numbers +\
-        [volume_per_atom] +\
-        [empty_volume] +\
-        [metals_fraction] +\
-        distance_matrix +\
-        van_der_waals_radius +\
-        electrical_resistivity +\
-        velocity_of_sound +\
-        reflectivity +\
-        poissons_ratio +\
-        molar_volume +\
-        thermal_conductivity +\
-        melting_point +\
-        critical_temperature +\
-        superconduction_temperature +\
-        liquid_range +\
-        bulk_modulus +\
-        youngs_modulus +\
-        brinell_hardness +\
-        rigidity_modulus +\
-        vickers_hardness +\
-        density_of_solid +\
-        coefficient_of_linear_thermal_expansion +\
-        average_ionic_radius +\
-        average_cationic_radius +\
-        average_anionic_radius +\
-        spacegroup_numbers_list
-    return descriptors_list
+    return feats
