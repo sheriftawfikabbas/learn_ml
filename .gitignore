@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Secrets — never commit credentials (rotated keys; see commit history notice)
+client_secret*.json
+token.pickle
+*.pem
+
+# Generated outputs
+comments.csv
+output
