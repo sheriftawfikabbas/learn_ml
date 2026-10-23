@@ -38,8 +38,9 @@ Install them only if you intend to run those specific scripts.
 | `CaseStudy06_YoutubeComments` | Downloading YouTube comments + intro NLP | YouTube Data API v3 | TF-IDF + logistic regression |
 | `CaseStudy07_CrystalFeatures` | Band-gap prediction from two descriptor families | committed CSVs (Materials Project + GPAW) | XGBoost, descriptor/label-leakage discussion |
 
-Each case study has (or, after this upgrade, documents in a README) its own
-pipeline: **generate/prepare data → train model → evaluate**.
+The script-based case studies (02, 03, 06, 07) each document their own
+pipeline — **generate/prepare data → train model → evaluate** — in their
+local README; the notebook case studies (01, 04, 05) are self-contained.
 
 ## Data
 
